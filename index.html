@@ -172,7 +172,6 @@
 
         .btn-disabled {
             opacity: 0.3;
-            cursor: not-allowed !important;
             filter: grayscale(1);
         }
 
@@ -180,11 +179,6 @@
             max-height: 60vh;
             overflow-y: auto;
             padding-right: 4px;
-        }
-
-        /* Esconder miniaturas não reveladas */
-        .thumb-hidden {
-            display: none;
         }
     </style>
 </head>
@@ -226,7 +220,6 @@
                         class="absolute top-0 right-0 p-2 text-[60px] md:text-[80px] font-black opacity-5 pointer-events-none leading-none">
                         1</div>
 
-                    <!-- Barra de progresso movida para aqui -->
                     <div id="hud-sidebar" class="mb-6">
                         <div class="flex justify-between items-end mb-2">
                             <span class="text-[10px] tracking-widest text-stone-400 uppercase font-mono">Processamento
@@ -263,29 +256,24 @@
                     </div>
                 </div>
 
-                <div class="grid grid-cols-2 gap-4">
+                <div class="flex flex-col gap-4">
                     <button id="btn-next" onclick="app.next()" disabled
-                        class="btn-disabled col-span-2 bg-stone-900 text-white py-4 px-6 flex items-center justify-center gap-4 hover:bg-stone-950 transition-all font-bold uppercase tracking-widest border-b-4 border-stone-700 active:border-b-0 active:translate-y-1">
+                        class="btn-disabled bg-stone-900 text-white py-4 px-6 flex items-center justify-center gap-4 hover:bg-stone-950 transition-all font-bold uppercase tracking-widest border-b-4 border-stone-700 active:border-b-0 active:translate-y-1">
                         Próxima Evidência
                     </button>
-                    <button onclick="document.getElementById('file-input').click()"
-                        class="bg-white border-2 border-stone-900 text-stone-900 py-2 md:py-3 font-bold uppercase text-[10px] md:text-xs flex items-center justify-center gap-2">
-                        Upload
-                    </button>
-                    <button onclick="app.discard()"
-                        class="bg-red-50 text-red-700 py-2 md:py-3 font-bold uppercase text-[10px] md:text-xs flex items-center justify-center gap-2">
-                        Descartar
-                    </button>
+                    <p id="nav-hint"
+                        class="text-[10px] text-center text-stone-500 uppercase font-bold tracking-tighter pb-8">Resolva
+                        o questionário para prosseguir</p>
                 </div>
-                <p id="nav-hint"
-                    class="text-[10px] text-center text-stone-500 uppercase font-bold tracking-tighter pb-8">Resolva o
-                    questionário para prosseguir</p>
             </div>
         </main>
 
         <footer class="mt-4 md:mt-12 pt-8 border-t border-stone-300 overflow-x-auto">
-            <h4 class="text-[10px] font-black uppercase tracking-widest text-stone-400 mb-4">Evidências Concluídas</h4>
-            <div id="gallery-thumbs" class="flex gap-4 pb-4"></div>
+            <h4 class="text-[10px] font-black uppercase tracking-widest text-stone-400 mb-4">Evidências Identificadas
+            </h4>
+            <div id="gallery-thumbs" class="flex gap-4 pb-4 min-h-[60px]">
+                <!-- Miniaturas aparecem aqui por descoberta -->
+            </div>
         </footer>
     </div>
 
@@ -303,8 +291,6 @@
         </div>
     </div>
 
-    <input type="file" id="file-input" class="hidden" accept="image/*">
-
     <script>
         const GALLERY_CONFIG = {
             1: {
@@ -313,7 +299,7 @@
                 quiz: {
                     question: "Em que ano nasci?",
                     options: ["1971", "1975", "1976"],
-                    correct: 1
+                    correct: 2
                 }
             },
             2: {
@@ -411,7 +397,6 @@
         const state = {
             currentIndex: 0,
             photos: [],
-            revealedIndices: new Set([0]), // A primeira sempre aparece ou o sistema pode ser estrito
             isUnlocked: false,
             quizSolved: false,
             brushSize: 60
@@ -449,10 +434,21 @@
             customCursor.style.background = 'rgba(255, 255, 255, 0.15)';
         });
 
-        state.photos = Array.from({ length: 10 }, (_, i) => {
+        // Gerar placeholder de fotos (simulado)
+        state.photos = Array.from({ length: 8 }, (_, i) => {
             const index = i + 1;
             const config = GALLERY_CONFIG[index] || { title: `Arquivo #${index}`, description: `Dados insuficientes para a evidência ${index}.` };
-            return { id: index.toString(), imageUrl: `./image${index}.jpg`, solved: false, ...config, hiddenLayers: [{ type: 'text', content: `ID: ${index}`, x: 10, y: 15 }, { type: 'stamp', content: 'REVELATIO', x: 70, y: 80 }] };
+            return {
+                id: index.toString(),
+                imageUrl: `https://picsum.photos/id/${index + 20}/800/600?grayscale`,
+                solved: false,
+                unlocked: false,
+                ...config,
+                hiddenLayers: [
+                    { type: 'text', content: `REF: ${index}-B`, x: 10, y: 15 },
+                    { type: 'stamp', content: 'REVELATIO', x: 70, y: 80 }
+                ]
+            };
         });
 
         function initCanvas() {
@@ -464,21 +460,12 @@
 
             canvas.width = rect.width;
             canvas.height = rect.height;
-            state.isUnlocked = false;
-            state.quizSolved = state.photos[state.currentIndex].solved;
 
-            const btnNext = document.getElementById('btn-next');
-            btnNext.disabled = !state.quizSolved;
-            if (state.quizSolved) btnNext.classList.remove('btn-disabled');
-            else btnNext.classList.add('btn-disabled');
+            const currentPhoto = state.photos[state.currentIndex];
+            state.isUnlocked = currentPhoto.unlocked;
+            state.quizSolved = currentPhoto.solved;
 
-            document.getElementById('nav-hint').innerText = state.quizSolved ? "Arquivo Concluído." : "Resolva o questionário para prosseguir";
-
-            const btnQuiz = document.getElementById('btn-quiz-panel');
-            btnQuiz.disabled = true;
-            btnQuiz.className = "w-full bg-stone-700 text-stone-500 py-4 font-black uppercase tracking-widest transition-all flex items-center justify-center gap-3 opacity-50 cursor-not-allowed";
-            document.getElementById('quiz-hint').innerText = "Clareza insuficiente";
-            document.getElementById('hud-sidebar').classList.remove('unlocked-status');
+            updateUIState();
 
             ctx.globalCompositeOperation = 'source-over';
             ctx.fillStyle = '#292524';
@@ -490,6 +477,39 @@
             }
 
             setTimeout(updateNoise, 100);
+        }
+
+        function updateUIState() {
+            const currentPhoto = state.photos[state.currentIndex];
+            const btnNext = document.getElementById('btn-next');
+            const btnQuiz = document.getElementById('btn-quiz-panel');
+            const hud = document.getElementById('hud-sidebar');
+
+            btnNext.disabled = !currentPhoto.solved;
+            if (currentPhoto.solved) btnNext.classList.remove('btn-disabled');
+            else btnNext.classList.add('btn-disabled');
+
+            document.getElementById('nav-hint').innerText = currentPhoto.solved ? "Evidência Arquivada." : "Resolva o questionário para prosseguir";
+
+            if (currentPhoto.unlocked && !currentPhoto.solved) {
+                btnQuiz.disabled = false;
+                btnQuiz.className = "w-full bg-amber-500 text-stone-900 py-4 font-black uppercase tracking-widest hover:bg-amber-400 transition-all flex items-center justify-center gap-3 cursor-pointer ready-to-quiz";
+                document.getElementById('quiz-hint').innerText = "Evidência pronta para análise";
+                hud.classList.add('unlocked-status');
+                document.getElementById('reveal-status').innerText = "CLAREZA ACEITÁVEL";
+            } else if (currentPhoto.solved) {
+                btnQuiz.disabled = true;
+                btnQuiz.className = "w-full bg-stone-700 text-stone-500 py-4 font-black uppercase tracking-widest transition-all flex items-center justify-center gap-3 opacity-50 cursor-not-allowed";
+                document.getElementById('quiz-hint').innerText = "Análise concluída";
+                hud.classList.add('unlocked-status');
+                document.getElementById('reveal-status').innerText = "ARQUIVADO";
+            } else {
+                btnQuiz.disabled = true;
+                btnQuiz.className = "w-full bg-stone-700 text-stone-500 py-4 font-black uppercase tracking-widest transition-all flex items-center justify-center gap-3 opacity-50 cursor-not-allowed";
+                document.getElementById('quiz-hint').innerText = "Clareza insuficiente";
+                hud.classList.remove('unlocked-status');
+                document.getElementById('reveal-status').innerHTML = 'Remover Ruído (Faltam <span id="target-left">30</span>%)';
+            }
         }
 
         function updateNoise() {
@@ -509,45 +529,34 @@
                 document.getElementById('progress-fill').style.width = `${noisePct}%`;
 
                 const left = Math.max(0, noisePct - 70);
-                document.getElementById('target-left').innerText = left;
+                const targetLeftEl = document.getElementById('target-left');
+                if (targetLeftEl) targetLeftEl.innerText = left;
 
-                if (noisePct <= 70 && !state.isUnlocked) {
+                // Gatilho universal 70%
+                if (noisePct <= 70 && !state.photos[state.currentIndex].unlocked) {
                     unlockQuizAction();
                 }
                 checkVisibility();
-            } catch (e) { console.warn("Canvas not ready", e); }
+            } catch (e) { console.warn("Canvas error", e); }
         }
 
         function unlockQuizAction() {
-            state.isUnlocked = true;
-            document.getElementById('hud-sidebar').classList.add('unlocked-status');
-            document.getElementById('reveal-status').innerText = "CLAREZA ACEITÁVEL";
-            const btnQuiz = document.getElementById('btn-quiz-panel');
             const current = state.photos[state.currentIndex];
+            current.unlocked = true;
+            state.isUnlocked = true;
 
-            if (current.quiz && !current.solved) {
-                btnQuiz.disabled = false;
-                btnQuiz.className = "w-full bg-amber-500 text-stone-900 py-4 font-black uppercase tracking-widest hover:bg-amber-400 transition-all flex items-center justify-center gap-3 cursor-pointer ready-to-quiz";
-                document.getElementById('quiz-hint').innerText = "Evidência pronta";
-            } else if (current.solved) {
-                document.getElementById('quiz-hint').innerText = "Evidência já arquivada";
-            } else {
-                unlockNavigation();
-            }
+            updateUIState();
+            // Só renderiza miniaturas agora que uma foi descoberta
+            app.renderThumbs();
         }
 
         function unlockNavigation() {
+            const current = state.photos[state.currentIndex];
+            current.solved = true;
             state.quizSolved = true;
-            state.photos[state.currentIndex].solved = true;
-            state.revealedIndices.add(state.currentIndex);
 
-            const btnNext = document.getElementById('btn-next');
-            btnNext.disabled = false;
-            btnNext.classList.remove('btn-disabled');
-            document.getElementById('nav-hint').innerText = "Concluído. Próximo disponível.";
+            updateUIState();
             document.getElementById('nav-hint').classList.add('text-green-600');
-
-            // Re-renderizar galeria para mostrar a nova foto desbloqueada
             app.renderThumbs();
         }
 
@@ -598,6 +607,7 @@
                 document.getElementById('case-number').innerText = state.currentIndex + 1;
                 document.getElementById('reveal-img').src = current.imageUrl;
                 document.getElementById('overlay-img').src = current.imageUrl;
+
                 const layersDiv = document.getElementById('dynamic-layers');
                 layersDiv.innerHTML = '';
                 current.hiddenLayers.forEach(l => {
@@ -608,6 +618,7 @@
                     else if (l.type === 'stamp') el.innerHTML = `<div class="archive-stamp text-[12px]">${l.content}</div>`;
                     layersDiv.appendChild(el);
                 });
+
                 this.renderThumbs();
                 initCanvas();
             },
@@ -615,10 +626,10 @@
                 const thumbs = document.getElementById('gallery-thumbs');
                 thumbs.innerHTML = '';
                 state.photos.forEach((p, i) => {
-                    // Só mostra se for a atual OU se já foi resolvida
-                    if (i === state.currentIndex || p.solved) {
+                    // Só exibe se já foi desbloqueada (70% ruído atingido)
+                    if (p.unlocked) {
                         const b = document.createElement('button');
-                        b.className = `w-14 h-14 flex-shrink-0 border-2 transition-all ${state.currentIndex === i ? 'border-stone-900 scale-110 opacity-100' : 'border-transparent opacity-50'}`;
+                        b.className = `w-14 h-14 flex-shrink-0 border-2 transition-all overflow-hidden ${state.currentIndex === i ? 'border-stone-900 scale-110 opacity-100' : 'border-transparent opacity-50 hover:opacity-100'}`;
                         b.innerHTML = `<img src="${p.imageUrl}" class="w-full h-full object-cover">`;
                         b.onclick = () => { state.currentIndex = i; app.render(); };
                         thumbs.appendChild(b);
@@ -626,15 +637,18 @@
                 });
             },
             openQuiz() {
-                if (!state.isUnlocked) return;
-                const quiz = state.photos[state.currentIndex].quiz;
+                const current = state.photos[state.currentIndex];
+                if (!current.unlocked) return;
+                const quiz = current.quiz;
                 if (!quiz) return;
+
                 const wrapper = document.getElementById('modal-content-wrapper');
                 wrapper.innerHTML = `
                     <p class="mb-6 font-bold text-lg md:text-xl text-stone-900">${quiz.question}</p>
                     <div class="space-y-3">${quiz.options.map((o, i) => `
                         <button onclick="app.check(this, ${i}, ${quiz.correct})" class="quiz-option w-full text-left p-4 text-sm font-black uppercase tracking-wider bg-white shadow-sm border-2 border-stone-200 hover:border-stone-400 transition-all">${o}</button>
                     `).join('')}</div>`;
+
                 const modal = document.getElementById('modal-overlay');
                 modal.classList.remove('hidden');
                 setTimeout(() => { modal.style.opacity = '1'; modal.style.pointerEvents = 'auto'; }, 10);
@@ -654,17 +668,11 @@
                 setTimeout(() => m.classList.add('hidden'), 300);
             },
             next() {
-                if (!state.photos[state.currentIndex].solved) return;
+                const current = state.photos[state.currentIndex];
+                if (!current.solved) return;
                 state.currentIndex = (state.currentIndex + 1) % state.photos.length;
                 app.render();
                 window.scrollTo({ top: 0, behavior: 'smooth' });
-            },
-            discard() {
-                if (state.photos.length > 1) {
-                    state.photos.splice(state.currentIndex, 1);
-                    state.currentIndex = Math.max(0, state.currentIndex - 1);
-                    app.render();
-                }
             }
         };
         window.app = app;

@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="pt-br">
 <head>
@@ -91,7 +90,8 @@
             transition: all 0.2s ease;
             border: 1px solid #d6d3d1;
         }
-        .quiz-option:hover { background-color: #f5f5f4; }
+        .quiz-option:hover:not(:disabled) { background-color: #f5f5f4; }
+        .quiz-option:disabled { cursor: not-allowed; }
         .quiz-correct { background-color: #dcfce7 !important; border-color: #166534 !important; color: #166534; }
         .quiz-incorrect { background-color: #fee2e2 !important; border-color: #991b1b !important; color: #991b1b; animation: shake 0.4s ease; }
 
@@ -119,6 +119,15 @@
             max-height: 60vh;
             overflow-y: auto;
             padding-right: 4px;
+        }
+
+        .score-badge {
+            animation: scoreAppear 0.5s ease;
+        }
+
+        @keyframes scoreAppear {
+            from { transform: scale(0.8); opacity: 0; }
+            to { transform: scale(1); opacity: 1; }
         }
     </style>
 </head>
@@ -152,7 +161,16 @@
                 <div id="info-panel" class="bg-stone-800 text-stone-100 p-6 md:p-8 shadow-2xl relative overflow-hidden min-h-[300px] md:min-h-[400px] flex flex-col">
                     <div id="case-number" class="absolute top-0 right-0 p-2 text-[60px] md:text-[80px] font-black opacity-5 pointer-events-none leading-none">1</div>
                     
-                    <div id="hud-sidebar" class="mb-6">
+                    <!-- Score Display -->
+                    <div class="absolute top-4 left-4 bg-amber-500/20 border-2 border-amber-500 px-3 py-1 rounded score-badge">
+                        <div class="flex gap-4 text-xs font-black uppercase">
+                            <span class="text-amber-400">★ <span id="score-display">0</span></span>
+                            <span class="text-red-400">✗ <span id="failures-display">0</span></span>
+                            <span class="text-blue-400">⏱ <span id="timer-display">00:00</span></span>
+                        </div>
+                    </div>
+                    
+                    <div id="hud-sidebar" class="mb-6 mt-8">
                         <div class="flex justify-between items-end mb-2">
                             <span class="text-[10px] tracking-widest text-stone-400 uppercase font-mono">Processamento de Ruído</span>
                             <span id="reveal-pct" class="text-xl font-black text-amber-500">100%</span>
@@ -180,7 +198,7 @@
 
                 <div class="flex flex-col gap-4">
                     <button id="btn-next" onclick="app.next()" disabled class="btn-disabled bg-stone-900 text-white py-4 px-6 flex items-center justify-center gap-4 hover:bg-stone-950 transition-all font-bold uppercase tracking-widest border-b-4 border-stone-700 active:border-b-0 active:translate-y-1">
-                        Próxima Evidência 
+                        <span id="btn-next-text">Próxima Evidência</span>
                     </button>
                     <p id="nav-hint" class="text-[10px] text-center text-stone-500 uppercase font-bold tracking-tighter pb-8">Resolva o questionário para prosseguir</p>
                 </div>
@@ -196,7 +214,7 @@
     </div>
 
     <div id="modal-overlay" class="fixed inset-0 z-[100] bg-black/80 hidden items-center justify-center p-4 md:p-6 opacity-0 pointer-events-none">
-        <div class="bg-[#f2efe9] max-w-lg w-full p-6 md:p-8 shadow-2xl border-t-8 border-stone-900 relative">
+        <div id="modal-container" class="bg-[#f2efe9] max-w-lg w-full p-6 md:p-8 shadow-2xl border-t-8 border-stone-900 relative">
             <button onclick="app.closeModal()" class="absolute top-4 right-4 text-stone-500 hover:text-stone-900">
                 <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
             </button>
@@ -313,7 +331,12 @@
             photos: [],
             isUnlocked: false,
             quizSolved: false,
-            brushSize: 60 
+            brushSize: 60,
+            score: 0,
+            failures: 0,
+            attempts: {},
+            startTime: null,
+            endTime: null
         };
 
         const canvas = document.getElementById('scratch-canvas');
@@ -354,7 +377,7 @@
                 unlocked: false,
                 ...config,
                 hiddenLayers: [
-                    { type: 'text', content: `ID: ${index}`, x: 10, y: 15 },
+                    { type: 'text', content: `ID: ${index}/ 11`, x: 10, y: 15 },
                     { type: 'stamp', content: 'REVELATIO', x: 70, y: 80 }
                 ]
             };
@@ -385,11 +408,30 @@
         function updateUIState() {
             const currentPhoto = state.photos[state.currentIndex];
             const btnNext = document.getElementById('btn-next');
+            const btnNextText = document.getElementById('btn-next-text');
             const btnQuiz = document.getElementById('btn-quiz-panel');
             const hud = document.getElementById('hud-sidebar');
+            
+            // Check if this is the last photo
+            const isLastPhoto = state.currentIndex === state.photos.length - 1;
+            
             btnNext.disabled = !currentPhoto.solved;
-            if (currentPhoto.solved) btnNext.classList.remove('btn-disabled');
-            else btnNext.classList.add('btn-disabled');
+            if (currentPhoto.solved) {
+                btnNext.classList.remove('btn-disabled');
+                if (isLastPhoto) {
+                    btnNextText.innerText = 'Ver Resultados Finais';
+                    btnNext.classList.add('bg-amber-500', 'hover:bg-amber-400');
+                    btnNext.classList.remove('bg-stone-900', 'hover:bg-stone-950');
+                } else {
+                    btnNextText.innerText = 'Próxima Evidência';
+                    btnNext.classList.remove('bg-amber-500', 'hover:bg-amber-400');
+                    btnNext.classList.add('bg-stone-900', 'hover:bg-stone-950');
+                }
+            } else {
+                btnNext.classList.add('btn-disabled');
+                btnNextText.innerText = 'Próxima Evidência';
+            }
+            
             document.getElementById('nav-hint').innerText = currentPhoto.solved ? "Evidência Arquivada." : "Resolva o questionário para prosseguir";
             if (currentPhoto.unlocked && !currentPhoto.solved) {
                 btnQuiz.disabled = false;
@@ -442,12 +484,25 @@
             state.isUnlocked = true;
             updateUIState();
             app.renderThumbs();
+            startTimer();
         }
 
         function unlockNavigation() {
             const current = state.photos[state.currentIndex];
             current.solved = true;
             state.quizSolved = true;
+            
+            // Award points based on attempts
+            const photoId = current.id;
+            const attempts = state.attempts[photoId] || 0;
+            let points = 0;
+            if (attempts === 0) points = 100;
+            else if (attempts === 1) points = 50;
+            else points = 25;
+            
+            state.score += points;
+            updateScoreDisplay();
+            
             updateUIState();
             document.getElementById('nav-hint').classList.add('text-green-600');
             app.renderThumbs();
@@ -488,6 +543,28 @@
         scratchWrapper.addEventListener('touchstart', (e) => { isDrawing = true; scratch(e); }, {passive:true});
         window.addEventListener('touchmove', (e) => { scratch(e); }, {passive:true});
         window.addEventListener('touchend', () => { isDrawing = false; updateNoise(); });
+
+        function updateScoreDisplay() {
+            document.getElementById('score-display').innerText = state.score;
+            document.getElementById('failures-display').innerText = state.failures;
+        }
+
+        function updateTimer() {
+            if (!state.startTime || state.endTime) return;
+            
+            const elapsed = Math.floor((Date.now() - state.startTime) / 1000);
+            const minutes = Math.floor(elapsed / 60);
+            const seconds = elapsed % 60;
+            document.getElementById('timer-display').innerText = 
+                `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+        }
+
+        function startTimer() {
+            if (!state.startTime) {
+                state.startTime = Date.now();
+                setInterval(updateTimer, 1000);
+            }
+        }
 
         const app = {
             render() {
@@ -539,12 +616,29 @@
                 setTimeout(() => { modal.style.opacity = '1'; modal.style.pointerEvents = 'auto'; }, 10);
             },
             check(btn, sel, cor) {
+                const current = state.photos[state.currentIndex];
+                const photoId = current.id;
+                
+                // Disable all buttons after selection
+                document.querySelectorAll('.quiz-option').forEach(b => b.disabled = true);
+                
                 if (sel === cor) {
                     btn.classList.add('quiz-correct');
                     unlockNavigation();
                     setTimeout(() => app.closeModal(), 1200);
                 } else {
                     btn.classList.add('quiz-incorrect');
+                    state.failures++;
+                    state.attempts[photoId] = (state.attempts[photoId] || 0) + 1;
+                    updateScoreDisplay();
+                    
+                    // Re-enable buttons after animation
+                    setTimeout(() => {
+                        document.querySelectorAll('.quiz-option').forEach(b => {
+                            b.disabled = false;
+                            b.classList.remove('quiz-incorrect');
+                        });
+                    }, 600);
                 }
             },
             closeModal() {
@@ -555,9 +649,109 @@
             next() { 
                 const current = state.photos[state.currentIndex];
                 if (!current.solved) return;
+                
+                // Check if this is the last photo
+                if (state.currentIndex === state.photos.length - 1) {
+                    // Show final score instead of moving to next
+                    app.showFinalScore();
+                    return;
+                }
+                
                 state.currentIndex = (state.currentIndex + 1) % state.photos.length; 
                 app.render(); 
                 window.scrollTo({ top: 0, behavior: 'smooth' });
+            },
+            showFinalScore() {
+                // Stop timer
+                if (!state.endTime) {
+                    state.endTime = Date.now();
+                }
+                
+                const totalPossible = state.photos.length * 100;
+                const percentage = Math.round((state.score / totalPossible) * 100);
+                const totalSeconds = Math.floor((state.endTime - state.startTime) / 1000);
+                const minutes = Math.floor(totalSeconds / 60);
+                const seconds = totalSeconds % 60;
+                const timeStr = `${minutes}:${String(seconds).padStart(2, '0')}`;
+                
+                let grade = '';
+                let message = '';
+                
+                if (percentage >= 90) {
+                    grade = 'EXCELENTE';
+                    message = 'Memória familiar impecável! Você conhece muito bem a história da família.';
+                } else if (percentage >= 75) {
+                    grade = 'MUITO BOM';
+                    message = 'Ótimo conhecimento familiar! Algumas evidências exigiram mais atenção.';
+                } else if (percentage >= 60) {
+                    grade = 'BOM';
+                    message = 'Bom trabalho! Ainda há detalhes da história familiar para explorar.';
+                } else {
+                    grade = 'COMPLETO';
+                    message = 'Missão cumprida! Cada erro é uma oportunidade de aprender mais sobre a família.';
+                }
+                
+                const modal = document.getElementById('modal-container');
+                modal.className = 'bg-[#f2efe9] max-w-2xl w-full p-8 md:p-12 shadow-2xl border-t-8 border-amber-500 relative';
+                
+                document.getElementById('modal-title').innerText = 'MISSÃO CONCLUÍDA';
+                const wrapper = document.getElementById('modal-content-wrapper');
+                wrapper.innerHTML = `
+                    <div class="text-center space-y-6">
+                        <div class="inline-block bg-stone-900 text-amber-400 px-6 py-3 text-3xl md:text-4xl font-black tracking-widest">
+                            ${grade}
+                        </div>
+                        
+                        <div class="bg-white/50 p-6 rounded-lg space-y-4">
+                            <div class="grid grid-cols-3 gap-3">
+                                <div class="bg-amber-500/20 border-2 border-amber-500 p-3 rounded">
+                                    <div class="text-[10px] uppercase tracking-widest text-stone-600 mb-1">Pontuação</div>
+                                    <div class="text-2xl font-black text-amber-600">${state.score}</div>
+                                    <div class="text-[10px] text-stone-500">de ${totalPossible}</div>
+                                </div>
+                                
+                                <div class="bg-stone-200 border-2 border-stone-400 p-3 rounded">
+                                    <div class="text-[10px] uppercase tracking-widest text-stone-600 mb-1">Erros</div>
+                                    <div class="text-2xl font-black text-red-600">${state.failures}</div>
+                                    <div class="text-[10px] text-stone-500">tentativas</div>
+                                </div>
+
+                                <div class="bg-blue-500/20 border-2 border-blue-500 p-3 rounded">
+                                    <div class="text-[10px] uppercase tracking-widest text-stone-600 mb-1">Tempo</div>
+                                    <div class="text-2xl font-black text-blue-600">${timeStr}</div>
+                                    <div class="text-[10px] text-stone-500">minutos</div>
+                                </div>
+                            </div>
+                            
+                            <div class="bg-stone-100 p-4 rounded">
+                                <div class="text-xs uppercase tracking-widest text-stone-600 mb-2">Aproveitamento</div>
+                                <div class="w-full bg-stone-300 rounded-full h-8 overflow-hidden">
+                                    <div class="bg-gradient-to-r from-amber-500 to-amber-400 h-full flex items-center justify-center text-white font-black text-sm transition-all duration-1000" style="width: ${percentage}%">
+                                        ${percentage}%
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <p class="text-stone-700 text-lg italic leading-relaxed">${message}</p>
+                        
+                        <div class="pt-4 space-y-3">
+                            <button onclick="location.reload()" class="w-full bg-stone-900 text-white py-4 px-6 font-bold uppercase tracking-widest hover:bg-stone-800 transition-all">
+                                Reiniciar Missão
+                            </button>
+                            <button onclick="app.closeModal()" class="w-full bg-stone-300 text-stone-700 py-3 px-6 font-bold uppercase tracking-widest hover:bg-stone-400 transition-all">
+                                Revisar Evidências
+                            </button>
+                        </div>
+                    </div>
+                `;
+                
+                const modalOverlay = document.getElementById('modal-overlay');
+                modalOverlay.classList.remove('hidden');
+                setTimeout(() => { 
+                    modalOverlay.style.opacity = '1'; 
+                    modalOverlay.style.pointerEvents = 'auto'; 
+                }, 10);
             }
         };
         window.app = app;
